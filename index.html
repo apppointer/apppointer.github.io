@@ -1,1 +1,92 @@
-<h1>Hello world</h1>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/async/1.5.2/async.min.js" integrity="sha512-a4IEl+TgB7Ap2rug7NB+mVbxPdFhIV5RQtn/SF+M4g0cpQwWBt/SnxEw+IyomwABiHQ828JHWAYNkzFCucVZDw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.2.6/localforage.min.js" integrity="sha512-8fWG6u5QqCJMZvYsuB0TBi9APtYqDeJZ973fWcW9FuiMg+qC68cCvBDzT9Bz4eLpyRW06s5OxbpT0/DMzO+P4Q==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/webtorrent/0.72.1/webtorrent.min.js" integrity="sha512-UZMZ5zU8DzwIgCygjduCrSpmf29wrFZcK9yB8upCK2yBh33YGQEMoRfA7xT6v8RAAR2GnD2lUDOBKuL0oCeWMA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <title>App Pointer</title>
+</head>
+<body>
+  <script>
+    ;(function () {
+  var client = new window.WebTorrent()
+  var torrentHashPrefix = 'magnet:?xt=urn:btih:'
+
+  var peerweb = window.peerweb = {}
+  peerweb.debug = false
+  peerweb.render = function peerWebRender (hash) {
+    var torrentHash = torrentHashPrefix + hash
+    if (peerweb.debug) console.log('Downloading torrent from', torrentHash)
+    client.add(torrentHash, renderFromTorrent)
+  }
+
+  function renderFromTorrent (torrent) {
+    if (peerweb.debug) console.log('Torrent Downloaded:')
+    if (peerweb.debug) console.log(torrent)
+
+    // Get index.html
+    var index = null
+    for (var i = 0; i < torrent.files.length; i++) {
+      var path = torrent.files[i].path
+      if (path === 'index.html') {
+        index = torrent.files[i]
+      }
+    }
+
+    // Store each file in browser storage
+    window.async.each(torrent.files, function (file, cb) {
+      file.getBlobURL(function (e, bloburl) {
+        if (e && peerweb.debug) console.log('Failed to get blob for', file.path, ':', e)
+        if (e) return null
+        if (peerweb.debug) console.log('Adding', file.path, 'to browser storage')
+        window.localforage.setItem(file.path, bloburl).then(function () { cb() }).catch(function (e) { cb(e) })
+      })
+    }, function (e) {
+      if (e && peerweb.debug) console.log('Failed to add files to local storage', e)
+      if (e) return null
+      index.getBuffer(function (e, buffer) {
+        if (e && peerweb.debug) console.log('Failed to get index.html buffer', e)
+        if (e) return null
+        document.body.innerHTML = buffer.toString()
+      })
+    })
+  }
+
+  peerweb.init = function peerwebInit (cb) {
+    if (!window.navigator.serviceWorker) {
+      return cb(new Error('Browser does not support service workers'))
+    }
+    window.navigator.serviceWorker.register('./router.js', { scope: './' }).then(function () {
+      verifyRouter(cb)
+    }).catch(function (e) {
+      verifyRouter(cb)
+    })
+  }
+
+  function verifyRouter (cb) {
+    var request = new window.XMLHttpRequest()
+    request.addEventListener('load', function verifyRouterOnLoad () {
+      if (this.status !== 234 || this.statusText !== 'intercepting') {
+        cb(new Error('Service Worker not intercepting http requests, perhaps not properly registered?'))
+      }
+      cb()
+    })
+    request.open('GET', './peerweb/status')
+    request.send()
+  }
+})()
+
+  
+  </script>
+    <script>
+      window.peerweb.init(function (e) {
+        if(e) throw e
+        window.peerweb.debug = true
+        window.peerweb.render('7f614db89d027af229cf4dee8c8dface02b07da7')
+      })
+    </script>
+    
+</body>
+</html>
